@@ -58,6 +58,19 @@ For a **static, pure-Go CLI** (no OpenGL), build only the CLI:
 CGO_ENABLED=0 go build -o nsz ./cmd/nsz
 ```
 
+### Prebuilt binaries (GitHub Releases)
+
+Pushing a **git tag** `v*` (for example `v1.0.0`) runs [.github/workflows/release.yml](.github/workflows/release.yml), which attaches **raw executables** (no zip/tar) to a GitHub **pre-release** labeled **alpha**.
+
+| Asset | Role |
+|-------|------|
+| `nsz-{tag}-{os}-{arch}` | CLI only (static build, `CGO_ENABLED=0`; `.exe` on Windows) |
+| `nsz-gui-{tag}-{os}-{arch}` | Desktop GUI (`CGO` / Fyne; `.exe` on Windows) |
+
+Platforms: **linux-amd64**, **windows-amd64**, **darwin-arm64** (Apple Silicon), **darwin-amd64** (Intel, via `macos-13` in CI).
+
+Download the files you need, `chmod +x` on Unix if required, then run `./nsz` or `./nsz-gui`. Linux GUI builds expect the same X11/OpenGL stack as other Fyne apps on your distro.
+
 ---
 
 ## Quick start (CLI)

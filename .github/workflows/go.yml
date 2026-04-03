@@ -10,6 +10,7 @@ on:
       - "docs/**"
       - "README.md"
       - ".github/workflows/go.yml"
+      - ".github/workflows/release.yml"
   pull_request:
     paths:
       - "go.mod"
@@ -19,6 +20,7 @@ on:
       - "docs/**"
       - "README.md"
       - ".github/workflows/go.yml"
+      - ".github/workflows/release.yml"
 
 jobs:
   test:

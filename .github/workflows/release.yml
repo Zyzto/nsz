@@ -1,0 +1,129 @@
+# Build release binaries when a version tag is pushed (e.g. v1.2.3).
+# All published GitHub releases are marked prerelease (alpha).
+#
+# Per OS/arch you get two raw binaries (no zip/tar):
+#   nsz-{tag}-{os}-{arch}[.exe]      — static CLI (CGO_ENABLED=0)
+#   nsz-gui-{tag}-{os}-{arch}[.exe]  — GUI (CGO); .exe on Windows only
+#
+# macos-13 provides darwin/amd64 (Intel). macos-latest is Apple Silicon (arm64).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Install Linux build deps (Fyne / CGO)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc pkg-config \
+            libgl1-mesa-dev libx11-dev xorg-dev libxext-dev \
+            libxinerama-dev libxcursor-dev libxi-dev
+
+      - name: Install Windows MinGW (CGO for Fyne)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          $mingw = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          if (Test-Path $mingw) { Add-Content $env:GITHUB_PATH $mingw }
+          else { Write-Warning "MinGW path not found; GUI build may fail" }
+
+      - name: Build static CLI (nsz)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          ext=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          go build -trimpath -ldflags="-s -w" -o "dist/nsz${ext}" ./cmd/nsz
+
+      - name: Build GUI (nsz-gui)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          ext=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          go build -trimpath -ldflags="-s -w" -o "dist/nsz-gui${ext}" ./cmd/nsz-gui
+
+      - name: Stage raw release binaries
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -e
+          mkdir -p release
+          ext=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          cp "dist/nsz${ext}" "release/nsz-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
+          cp "dist/nsz-gui${ext}" "release/nsz-gui-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
+          if [ "${{ matrix.goos }}" != "windows" ]; then chmod +x release/*; fi
+          ls -la release/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsz-release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: release/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          pattern: nsz-release-*
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: NSZ (Go) ${{ github.ref_name }} — alpha
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          body: |
+            **Alpha (pre-release).** This Go port is experimental; verify binaries and outputs before relying on them.
+
+          files: assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
