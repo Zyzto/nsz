@@ -27,6 +27,14 @@ class ProgressModal(ModalView):
     def on_cancel(self, *args):
         pass
 
+    def update_status(self, status, progress=None):
+        self.status_text = status
+        if progress is not None:
+            self.progress_percent = progress
+
+    def update_file(self, filename):
+        self.current_file = filename
+
     def set_operation(self, name):
         self.operation_name = name
         self.status_text = "Starting..."
