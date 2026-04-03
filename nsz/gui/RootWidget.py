@@ -136,18 +136,48 @@ class RootWidget(FloatLayout):
         )
 
         modal = self._create_progress_modal()
-        current_file = ""
 
-        def update_modal(status=None, progress=None, filename=None):
+        current_file = ""
+        file_count = 0
+        current_file_index = 0
+        file_size_mb = 0
+        processed_mb = 0
+        speed_mb_s = 0
+        eta_seconds = 0
+
+        def update_modal(
+            status=None,
+            progress=None,
+            filename=None,
+            file_idx=None,
+            total_files=None,
+            size_mb=None,
+            processed=None,
+            speed=None,
+            eta=None,
+        ):
             def do_update(dt):
                 if filename is not None:
                     modal.update_file(filename)
+                if file_idx is not None and total_files is not None:
+                    modal.current_file_index = file_idx
+                    modal.total_files = total_files
+                if size_mb is not None:
+                    modal.file_size_mb = size_mb
+                if processed is not None:
+                    modal.processed_mb = processed
+                if speed is not None:
+                    modal.speed_mb_s = speed
+                if eta is not None:
+                    modal.eta_seconds = eta
                 if status is not None and progress is not None:
                     modal.update_status(status, progress)
                 elif status is not None:
                     modal.update_status(status, None)
 
             Clock.schedule_once(do_update)
+
+        update_modal(status="Starting...", progress=0)
 
         while True:
             line = process.stdout.readline()
@@ -157,19 +187,60 @@ class RootWidget(FloatLayout):
             if line:
                 print(line.rstrip())
 
-                if "%" in line:
-                    percent_match = re.search(r"(\d+)%", line)
-                    if percent_match:
-                        percent = int(percent_match.group(1))
-                        update_modal(status=f"Progress: {percent}%", progress=percent)
+                line_lower = line.lower()
+
+                percent_match = re.search(r"(\d+)%", line)
+                if percent_match:
+                    percent = int(percent_match.group(1))
+                    update_modal(status=f"Progress: {percent}%", progress=percent)
+
+                bar_match = re.search(
+                    r"(\d+)/(\d+)\s+MiB\s+\[(\d+):(\d+)<(\d+):(\d+),\s*([\d.]+)MiB/s\]",
+                    line,
+                )
+                if bar_match:
+                    processed = int(bar_match.group(1))
+                    total = int(bar_match.group(2))
+                    elapsed_mins = int(bar_match.group(3))
+                    elapsed_secs = int(bar_match.group(4))
+                    eta_mins = int(bar_match.group(5))
+                    eta_secs = int(bar_match.group(6))
+                    speed = float(bar_match.group(7))
+
+                    eta_total = eta_mins * 60 + eta_secs
+                    if total > 0:
+                        percent = int((processed / total) * 100)
+                        update_modal(
+                            status=f"Progress: {percent}% | {speed:.1f} MB/s | ETA: {eta_mins}m {eta_secs}s",
+                            progress=percent,
+                            processed=processed,
+                            size_mb=total,
+                            speed=speed,
+                            eta=eta_total,
+                        )
 
                 file_match = re.search(
-                    r"(?:Compressing|Decompressing|Processing|Verifying)[:\s]+[^\s]+",
+                    r"(?:Compressing|Solid compressing|Block compressing)[:\s]+[^\s]+",
                     line,
                 )
                 if file_match:
                     current_file = file_match.group(0)[:60]
                     update_modal(filename=current_file)
+                    current_file_index += 1
+                    update_modal(
+                        status=f"Processing file {current_file_index}/{file_count}"
+                    )
+
+                file_count_match = re.search(r"\[FILE\s+(\d+)/(\d+)\]", line)
+                if file_count_match:
+                    current_file_index = int(file_count_match.group(1))
+                    file_count = int(file_count_match.group(2))
+                    update_modal(file_idx=current_file_index, total_files=file_count)
+
+                size_match = re.search(r"->\s+([^\s]+\.(nsz|xcz|ncz))", line)
+                if size_match:
+                    out_file = size_match.group(1)
+                    update_modal(filename=f"Output: {out_file}")
 
             if self._cancel_requested:
                 process.terminate()

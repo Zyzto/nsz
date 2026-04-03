@@ -15,12 +15,19 @@ class ProgressModal(ModalView):
     progress_color = [0.2, 0.5, 0.9, 1.0]
     current_file = StringProperty("")
 
+    current_file_index = NumericProperty(0)
+    total_files = NumericProperty(0)
+    file_size_mb = NumericProperty(0)
+    processed_mb = NumericProperty(0)
+    speed_mb_s = NumericProperty(0)
+    eta_seconds = NumericProperty(0)
+
     __events__ = ("on_cancel",)
 
     def __init__(self, **kwargs):
         super(ProgressModal, self).__init__(**kwargs)
         self.auto_dismiss = False
-        self.size_hint = (0.7, 0.5)
+        self.size_hint = (0.7, 0.6)
 
     def on_cancel(self, *args):
         pass
@@ -38,6 +45,12 @@ class ProgressModal(ModalView):
         self.status_text = "Starting..."
         self.progress_percent = 0
         self.current_file = ""
+        self.current_file_index = 0
+        self.total_files = 0
+        self.file_size_mb = 0
+        self.processed_mb = 0
+        self.speed_mb_s = 0
+        self.eta_seconds = 0
 
     def set_progress_color(self, r, g, b, a=1.0):
         self.progress_color = [r, g, b, a]

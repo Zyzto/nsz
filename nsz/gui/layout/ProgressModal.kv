@@ -10,7 +10,7 @@
     BoxLayout:
         orientation: "vertical"
         padding: 30
-        spacing: 15
+        spacing: 12
         
         Label:
             id: operation_label
@@ -24,10 +24,10 @@
         Label:
             id: file_label
             text: root.current_file
-            font_size: 14
+            font_size: 15
             color: 0.5, 0.7, 1.0, 1.0
             size_hint_y: None
-            height: 25
+            height: 28
             halign: "center"
             text_size: self.width, None
             valign: "middle"
@@ -35,20 +35,43 @@
         BoxLayout:
             orientation: "horizontal"
             size_hint_y: None
-            height: 30
+            height: 24
+            spacing: 10
+            Label:
+                text: "File:"
+                font_size: 13
+                color: 0.5, 0.5, 0.5, 1.0
+                size_hint_x: 0.15
+            Label:
+                text: str(root.current_file_index) + " / " + str(root.total_files) + " files"
+                font_size: 13
+                color: 0.6, 0.8, 1.0, 1.0
+                size_hint_x: 0.85
+        
+        BoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: 28
             spacing: 10
             Label:
                 id: status_label
                 text: root.status_text
-                font_size: 16
+                font_size: 14
                 color: 0.6, 0.8, 1.0, 1.0
                 halign: "left"
-                size_hint_x: 0.8
+                size_hint_x: 0.6
             Label:
                 id: percent_label
                 text: str(int(root.progress_percent)) + "%"
                 font_size: 16
                 color: 0.4, 0.9, 0.4, 1.0
+                halign: "right"
+                size_hint_x: 0.2
+            Label:
+                id: speed_label
+                text: str(int(root.speed_mb_s)) + " MB/s"
+                font_size: 13
+                color: 0.8, 0.6, 0.3, 1.0
                 halign: "right"
                 size_hint_x: 0.2
         
@@ -57,7 +80,7 @@
             value: root.progress_percent
             max: 100
             size_hint_y: None
-            height: 20
+            height: 22
             canvas:
                 Color:
                     rgba: root.progress_color
@@ -68,7 +91,29 @@
         BoxLayout:
             orientation: "horizontal"
             size_hint_y: None
-            height: 40
+            height: 24
+            spacing: 20
+            Label:
+                text: "Processed:"
+                font_size: 12
+                color: 0.5, 0.5, 0.5, 1.0
+            Label:
+                text: str(root.processed_mb) + " MB"
+                font_size: 12
+                color: 0.7, 0.7, 0.9, 1.0
+            Label:
+                text: "ETA:"
+                font_size: 12
+                color: 0.5, 0.5, 0.5, 1.0
+            Label:
+                text: str(int(root.eta_seconds // 60)) + "m " + str(int(root.eta_seconds % 60)) + "s"
+                font_size: 12
+                color: 0.9, 0.7, 0.4, 1.0
+        
+        BoxLayout:
+            orientation: "horizontal"
+            size_hint_y: None
+            height: 44
             spacing: 15
             
             Button:
