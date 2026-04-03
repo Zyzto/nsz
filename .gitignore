@@ -1,3 +1,13 @@
+# Editor / OS
+.vs/
+.vscode/*
+!.vscode/settings.json
+
+# Go
+*.exe
+*.test
+
+# Game / tool artifacts
 *.pyc
 *.nsp
 *.xci
@@ -11,25 +21,20 @@
 *.ncz
 *.keys
 *keys.txt
-.vs/
-.vscode/
 ROMs/
 build/
 dist/
-nsz/__init__.dist/
-nsz/__init__.build
-nsz_win64_portable/
-nsz.egg-info/
-nsz.build/
-nsz.dist/
-nsz/gui/gui.ini
 normal
 logo
 update
 secure
 titlekeys.txt
 titledb/
-*.exe
 *.7z
 * - Copy*
 
+# Local Python / packaging (if recreated)
+.venv/
+.venv*/
+__pycache__/
+*.egg-info/
