@@ -1,8 +1,7 @@
 <SelectableLabel>:
-	# Draw a background to indicate selection
 	canvas.before:
 		Color:
-			rgba: (0.0, 0.9, 0.1, 0.3) if self.selected else (0, 0, 0, 0)
+			rgba: (0.2, 0.4, 0.8, 0.4) if self.selected else (0.1, 0.1, 0.2, 0.3)
 		Rectangle:
 			pos: self.pos
 			size: self.size
@@ -13,7 +12,7 @@
 	filesize_text: '0 KB'
 	pos: self.pos
 	size: self.size
-	on_size: self.height = self.ids.id_filename.height #Booth required due to the way how Kivy resizes
+	on_size: self.height = self.ids.id_filename.height
 	Label:
 		id: id_filename
 		valign: "top"
@@ -21,14 +20,15 @@
 		pos: 0, 0
 		size_hint: None, None
 		text_size: self.width, None
-		font_size: 12
+		font_size: 13
+		color: 0.9, 0.9, 1.0, 1.0
 		text: root.filename_text
 		size: root.width-300, self.texture_size[1]
-		on_size: root.height = self.height #Booth required due to the way how Kivy resizes
-		padding: [3, 2]
+		on_size: root.height = self.height
+		padding: [5, 3]
 		canvas.before:
 			Color:
-				rgba: (1.0, 0.0, 0.0, 0.1)
+				rgba: (0.0, 0.3, 0.5, 0.15)
 			Rectangle:
 				pos: self.pos
 				size: self.size
@@ -40,15 +40,10 @@
 		size_hint: None, None
 		text_size: self.width, root.height
 		font_size: 12
+		color: 0.3, 0.8, 0.3, 1.0
 		text: root.titleid
 		size: 140, self.texture_size[1]
 		padding: [3, 2]
-		canvas.before:
-			Color:
-				rgba: (1.0, 1.0, 0.0, 0.1)
-			Rectangle:
-				pos: self.pos
-				size: self.size
 	Label:
 		id: id_version
 		valign: "top"
@@ -57,15 +52,10 @@
 		size_hint: None, None
 		text_size: self.width, root.height
 		font_size: 12
+		color: 0.8, 0.6, 0.2, 1.0
 		text: root.version
 		size: 80, self.texture_size[1]
 		padding: [3, 2]
-		canvas.before:
-			Color:
-				rgba: (0.0, 1.0, 1.0, 0.1)
-			Rectangle:
-				pos: self.pos
-				size: self.size
 	Label:
 		id: id_size
 		valign: "top"
@@ -74,22 +64,17 @@
 		size_hint: None, None
 		text_size: self.width, root.height
 		font_size: 12
+		color: 0.6, 0.8, 1.0, 1.0
 		text: root.filesize_text
 		size: 80, self.texture_size[1]
 		padding: [3, 2]
-		canvas.before:
-			Color:
-				rgba: (0.0, 0.0, 1.0, 0.1)
-			Rectangle:
-				pos: self.pos
-				size: self.size
 
 <RV>:
 	scroll_y: 0.5
 	viewclass: 'SelectableLabel'
 	SelectableRecycleBoxLayout:
 		id: selectableRecycleBoxLayout
-		default_size: None, dp(40)
+		default_size: None, dp(44)
 		default_size_hint: 0.99, None
 		size_hint_y: None
 		height: self.minimum_height
@@ -109,4 +94,5 @@
 			id: DragAndDropLabel
 			text_size: self.size
 			font_size: 0.03 * self.width
+			color: 0.7, 0.8, 1.0, 0.8
 			text: "Drag & Drop NSP/NSZ/XCI/XCZ/NCZ files/folders here"
