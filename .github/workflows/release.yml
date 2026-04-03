@@ -5,7 +5,7 @@
 #   nsz-{tag}-{os}-{arch}[.exe]      — static CLI (CGO_ENABLED=0)
 #   nsz-gui-{tag}-{os}-{arch}[.exe]  — GUI (CGO); .exe on Windows only
 #
-# macos-13 provides darwin/amd64 (Intel). macos-latest is Apple Silicon (arm64).
+# macOS: darwin/arm64 only (macos-latest). GitHub no longer offers hosted Intel macOS runners.
 
 name: Release
 
@@ -19,6 +19,10 @@ permissions:
 
 jobs:
   build:
+    # Windows runners default to PowerShell; these scripts are bash (POSIX sh).
+    defaults:
+      run:
+        shell: bash
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -33,9 +37,6 @@ jobs:
           - runner: macos-latest
             goos: darwin
             goarch: arm64
-          - runner: macos-13
-            goos: darwin
-            goarch: amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -58,9 +59,21 @@ jobs:
         shell: pwsh
         run: |
           choco install mingw -y --no-progress
-          $mingw = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
-          if (Test-Path $mingw) { Add-Content $env:GITHUB_PATH $mingw }
-          else { Write-Warning "MinGW path not found; GUI build may fail" }
+          # Chocolatey mingw 15.x uses ProgramData\mingw64; older layouts lived under chocolatey\lib\mingw\...
+          $candidates = @(
+            "C:\ProgramData\mingw64\mingw64\bin",
+            "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          )
+          $added = $false
+          foreach ($d in $candidates) {
+            if (Test-Path (Join-Path $d "gcc.exe")) {
+              Add-Content $env:GITHUB_PATH $d
+              Write-Host "Added MinGW to PATH: $d"
+              $added = $true
+              break
+            }
+          }
+          if (-not $added) { Write-Warning "gcc.exe not found in known MinGW paths; GUI build may fail" }
 
       - name: Build static CLI (nsz)
         env:
@@ -84,7 +97,6 @@ jobs:
           go build -trimpath -ldflags="-s -w" -o "dist/nsz-gui${ext}" ./cmd/nsz-gui
 
       - name: Stage raw release binaries
-        shell: bash
         env:
           VERSION: ${{ github.ref_name }}
         run: |
