@@ -42,7 +42,7 @@ func main() {
 
 	g := newGalaxy(ctx)
 
-	w := a.NewWindow("NSZ GUI")
+	w := a.NewWindow("NSZ GUI (experimental)")
 	w.Resize(fyne.NewSize(940, 640))
 	w.SetFixedSize(false)
 	w.SetMaster()
@@ -498,7 +498,7 @@ func main() {
 	)
 	fileCard := widget.NewCard(
 		"Queue",
-		"Drop files here, use Add files or Scan folder. Compress uses solid .nca→.ncz. .xci→.xcz is optional in Settings (off by default).",
+		"Experimental Go port — may not work; verify outputs. Drop files here, use Add files or Scan folder. Compress uses solid .nca→.ncz. .xci→.xcz is optional in Settings (off by default).",
 		queueBody,
 	)
 

@@ -80,7 +80,8 @@ func run() int {
 	flag.BoolVar(&opt.Quiet, "q", false, "Quiet")
 	flag.BoolVar(&opt.Quiet, "quiet", false, "Quiet")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "nsz — PFS0 / NSZ family compressor-decompressor\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "nsz — PFS0 / NSZ family compressor-decompressor (Go port; experimental, may not work)\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Prefer upstream Python NSZ for production use unless you have verified this binary.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

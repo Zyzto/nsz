@@ -1,29 +1,49 @@
-# NSZ
+# NSZ (Go)
 
-A compression/decompression tool (CLI and optional desktop GUI) for certain proprietary **PFS0-style** archives and related compressed payloads, using [zstd](https://github.com/facebook/zstd). Output can be used with installers and tools that understand these formats.
+> **Experimental:** This Go port is incomplete compared to upstream NSZ. Several formats and flags are missing or only partially tested. **It may not work** on your files, produce bit-identical output, or match Python NSZ behavior. Prefer [upstream NSZ](https://github.com/nicoboss/nsz) for anything important until you have verified this build yourself.
 
-**This repository:** [github.com/zyzto/nsz](https://github.com/zyzto/nsz) — Go implementation (`cmd/nsz`, `cmd/nsz-gui`, shared `internal/`). Module path: `github.com/zyzto/nsz`.
+A **Go** implementation of the NSZ family of tools: compress and decompress Nintendo Switch–style **PFS0** archives (`.nsp` / `.nsz`) and **NCZ** payloads (compressed `.nca`), using [zstd](https://github.com/facebook/zstd). This repo ships two programs that share the same core library:
+
+| Binary      | Role |
+|------------|------|
+| **`nsz`**  | CLI only (`CGO_ENABLED=0` supported); no GUI dependencies |
+| **`nsz-gui`** | Desktop UI ([Fyne](https://fyne.io/)) on top of the same `internal/core` API |
+
+**Repository:** [github.com/zyzto/nsz](https://github.com/zyzto/nsz) · **Go module:** `github.com/zyzto/nsz`
+
+---
 
 ## Upstream
 
-NSZ was created by **Nico Bosshard** with **Blake Warner** and many contributors. Upstream home:
+NSZ was created by **Nico Bosshard** with **Blake Warner** and many contributors. This port tracks behavior and flags where practical but is **not** a line-for-line clone.
 
-- GitHub: [github.com/nicoboss/nsz](https://github.com/nicoboss/nsz)
-- Swiss mirror: [gitlab.nicobosshard.ch/nicoboss/nsz](https://gitlab.nicobosshard.ch/nicoboss/nsz)
+| Resource | URL |
+|----------|-----|
+| Upstream GitHub | [github.com/nicoboss/nsz](https://github.com/nicoboss/nsz) |
+| Swiss mirror | [gitlab.nicobosshard.ch/nicoboss/nsz](https://gitlab.nicobosshard.ch/nicoboss/nsz) |
+| PyPI (original) | [pypi.org/project/nsz/](https://pypi.org/project/nsz/) |
 
-The [LICENSE](LICENSE) file retains the original MIT copyright and permission text required by that license.
+The [LICENSE](LICENSE) file retains the MIT text from upstream as required.
+
+---
 
 ## Legal
 
-- This project does NOT incorporate any copyrighted material such as cryptographic keys. All keys must be provided by the user.
-- This project does NOT circumvent any technological protection measures. The NSZ-related formats keep such measures in place in the usual way.
-- Use this software only with data you are legally entitled to process.
-- This project is MIT licensed. See [LICENSE](LICENSE) in this repository.
+- This project does **not** ship cryptographic keys. You must supply any keys file yourself, from lawful sources.
+- This project does **not** exist to circumvent protection measures; formats handled here preserve the usual encryption layout.
+- Use the software only on data you are entitled to process.
+- Licensed under MIT — see [LICENSE](LICENSE).
+
+---
 
 ## Requirements
 
-- Go 1.22+
-- For **`nsz-gui`**: OS packages for Fyne/OpenGL (e.g. on Debian/Ubuntu: `libgl1-mesa-dev`, `xorg-dev`)
+- **Go 1.22+**
+- **GUI build (`nsz-gui`):** system packages for OpenGL / Fyne (e.g. Debian/Ubuntu: `libgl1-mesa-dev`, `xorg-dev`)
+
+CI installs those packages on Ubuntu before `go test` and builds both binaries (see [.github/workflows/go.yml](.github/workflows/go.yml)).
+
+---
 
 ## Build
 
@@ -32,54 +52,98 @@ go build -o nsz ./cmd/nsz
 go build -o nsz-gui ./cmd/nsz-gui
 ```
 
-For a static, pure-Go CLI (no GUI toolkit), build only `cmd/nsz` with `CGO_ENABLED=0`.
+For a **static, pure-Go CLI** (no OpenGL), build only the CLI:
 
-## Keys file
+```bash
+CGO_ENABLED=0 go build -o nsz ./cmd/nsz
+```
 
-Some workflows need a keys file in the format common to open-source console crypto tools (`prod.keys` or `keys.txt`), which you must obtain legally. By default the program searches the executable’s directory and your user profile using the same layout as other tools in that ecosystem (see `DefaultKeySearchPaths` in `internal/keys/keys.go` for the exact list).
+---
 
-The Go decompress path for standard `.nsz`/`.ncz` handled here does not require keys for those formats; compression and other features may.
+## Quick start (CLI)
 
-## Usage
+The commands below may fail or differ from Python NSZ; treat them as **best-effort** until you have validated them on your data.
 
-Run `nsz --help` for flags. Examples:
+```bash
+# Help (all flags mirror upstream names where ported)
+nsz --help
 
-- Decompress a folder: `nsz -D /path/to/files/`
-- Compress (when implemented): `nsz -C /path/to/files/`
+# Decompress .nsz → .nsp (output next to input if -o omitted)
+nsz -D game.nsz
 
-`nsz-gui` provides a graphical workflow for decompression, output folder, and related options.
+# Decompress into a directory
+nsz -D -o /path/out game.nsz
 
-## Status (vs upstream)
+# Standalone .ncz → .nca
+nsz -D patch.ncz
 
-**Implemented (Go):**
+# Compress a single .nca → .ncz (solid zstd; see limitations below)
+nsz -C -l 18 title.nca
 
-- Decompress `.nsz` → `.nsp` (PFS0 rebuild, `.ncz` → `.nca`)
-- Decompress standalone `.ncz` → `.nca`
-- Solid and block NCZ payloads
-- CLI flags aligned with upstream where ported (some operations still return “not implemented”)
-- GUI: decompress workflow, output folder, “Fix PFS0 padding”, persisted preferences
+# Info (PFS0 / NCZ / .xci root layout)
+nsz -i -depth 1 archive.nsp
 
-**Not implemented yet:**
+# Verify NCZ members inside .nsz / .nsp / standalone .ncz
+nsz -V -Q bundle.nsz
 
-- Compress (`-C`), `.xcz`/`.xci` parity, full parity for verify/titlekeys/extract/info/undupe/create, etc.
+# Title keys from tickets in .nsp/.nsz → merges ./titlekeys.txt
+nsz -titlekeys game.nsp
+```
 
-**PFS0 names:** Parsing follows upstream’s TOC walk (last row → first) when slicing the string table; see `internal/pfs0/pfs0_test.go`. The parser rejects unreasonable `fileCount`/string table sizes and out-of-range `nameOffset` values.
+**Machine-readable progress** (for scripts):
 
-**NCZ implementation:** Block and section handling lives under `internal/ncz/`.
+```bash
+nsz -D --machine-readable game.nsz
+```
 
-## File format details
+---
 
-### NSZ / PFS0 layout
+## GUI (`nsz-gui`)
 
-`.nsz` archives follow the same layout as `.nsp` (PFS0); the extension signals compressed `.ncz` members. `.ncz` entries can be mixed with plain `.nca` members in the same container.
+- Same **experimental** expectations as the CLI: verify outputs before trusting them.
+- Queue paths, optional **output directory**, **Compress** / **Decompress**, **Verify**, **Info**, **Extract** (extract errors until implemented), **Dump keys list** (titlekeys).
+- **Settings:** zstd level, block vs solid preference labels, block size exponent, verify mode (off / quick / full), keep-all, long mode, threads, multi-job count, overwrite, fix padding, parse CNMT flags, **compress .xci → .xcz** (off by default).
+- **Theme:** custom dark styling; preferences persist under the Fyne app ID `io.github.zyzto.nsz.gui`.
+- When `core.Run` fails, the status line shows `Error: …` and an error dialog is shown.
+- Jobs also log to **stderr** with timestamps (useful when launched from a terminal).
 
-### XCZ
+---
 
-`.xcz` follows the same idea for the `.xci` style layout; the extension signals compressed `.ncz` members.
+## Keys file (`prod.keys` / `keys.txt`)
 
-### NCZ
+Some **future** or **upstream-equivalent** workflows expect a keys file in the usual ecosystem format. **Decompressing** standard `.nsz` / `.ncz` in this port does **not** require keys.
 
-These are compressed `.nca`-style blobs: payload is decrypted, then compressed with zstd. The first `0x4000` bytes match the original header region (still encrypted). At `0x4000` begins the variable-sized NCZ header (sections for re-encryption metadata; optional block compression). The zstd stream follows to EOF and decompresses to offset `0x4000`. For block mode, sizes in `compressedBlockSizeList` vs decompressed block size determine whether a block is stored plain or compressed.
+Search paths are defined in `internal/keys/keys.go` (`DefaultKeySearchPaths`): executable directory, common profile locations, etc.
+
+---
+
+## What works today (summary)
+
+| Area | Status |
+|------|--------|
+| Decompress `.nsz` → `.nsp` | Yes (PFS0 rebuild, `.ncz` members → `.nca`) |
+| Decompress `.ncz` → `.nca` | Yes |
+| Decompress `.xcz` | **No** (fails if that is all you pass) |
+| Compress `.nca` → `.ncz` | Yes (**solid** only; block mode warns) |
+| Compress `.xci` → `.xcz` | Optional (`-compress-xci` / GUI setting); experimental |
+| Compress whole `.nsp` | **No** (returns structured error; needs full container pipeline) |
+| Info | `.nsp` / `.nsz`, `.ncz`, `.xci` (depth ≥2 secure listing limited) |
+| Verify | NCZ payload checks; not full CNMT / plain-NCA hash parity |
+| Titlekeys | `.nsp` / `.nsz` → `titlekeys.txt`; no `titledb/` JSON merge |
+| Extract (`-x`) | **No** |
+| Undupe / create / other flags | Parsed but not wired in `core.Run` |
+
+A longer parity and limitation list lives in [docs/PARITY.md](docs/PARITY.md).
+
+---
+
+## File formats (short)
+
+- **`.nsp` / `.nsz`:** PFS0 container. `.nsz` is the same layout with some entries stored as `.ncz` instead of raw `.nca`.
+- **`.ncz`:** Compressed NCA-style blob: first `0x4000` bytes match the original encrypted header window; NCZ metadata and zstd stream follow (solid or block layout — this port implements read/write for the pieces used in tests and CLI paths above).
+- **`.xci` / `.xcz`:** Cartridge-style layout; `.xcz` is the compressed analogue. **Decompress / info / verify for `.xcz`** are largely unimplemented; **compress** to `.xcz` is opt-in.
+
+---
 
 ## Tests
 
@@ -87,10 +151,26 @@ These are compressed `.nca`-style blobs: payload is decrypted, then compressed w
 go test ./... -count=1
 ```
 
-## References
+`internal/ncz` and other packages include golden-style tests against expectations aligned with the original Python implementation.
 
-Historical package index entry for the original tool: <https://pypi.org/project/nsz/>
+---
+
+## Project layout
+
+```
+cmd/nsz/          CLI entrypoint
+cmd/nsz-gui/      Fyne GUI
+internal/core/    Options, Run(), compress/decompress/info/verify/titlekeys
+internal/ncz/     NCZ encode/decode, block/solid
+internal/pfs0/    PFS0 reader
+internal/hfs0/    HFS0 for .xci / secure partition views
+internal/xci/     XCI layout helpers
+internal/ticket/  Ticket parsing for titlekeys
+internal/keys/    Key file loading search paths and helpers
+```
+
+---
 
 ## Credits
 
-Thanks to upstream authors and everyone who contributed to the original NSZ project (see **Upstream**).
+Thanks to upstream authors and everyone who contributed to the original NSZ project. This Go port is maintained separately; see **Upstream** for the canonical feature set and documentation of the Python tool.

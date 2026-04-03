@@ -7,6 +7,8 @@ on:
       - "go.sum"
       - "cmd/**"
       - "internal/**"
+      - "docs/**"
+      - "README.md"
       - ".github/workflows/go.yml"
   pull_request:
     paths:
@@ -14,6 +16,8 @@ on:
       - "go.sum"
       - "cmd/**"
       - "internal/**"
+      - "docs/**"
+      - "README.md"
       - ".github/workflows/go.yml"
 
 jobs:

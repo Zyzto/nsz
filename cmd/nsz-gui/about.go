@@ -40,9 +40,12 @@ func showAbout(parent fyne.Window) {
 	scroll.SetMinSize(fyne.NewSize(560, 320))
 
 	header := widget.NewLabelWithStyle("About NSZ GUI", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	exp := widget.NewLabel("This is an experimental Go port. It may not work on all files; compare with upstream NSZ when it matters.")
+	exp.Wrapping = fyne.TextWrapWord
 
 	body := container.NewVBox(
 		container.NewPadded(header),
+		container.NewPadded(exp),
 		linksPad,
 		widget.NewSeparator(),
 		container.NewPadded(scroll),
