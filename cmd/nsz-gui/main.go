@@ -1,4 +1,5 @@
 // Command nsz-gui is the GUI binary (Fyne); it can also run non-interactive operations via flags.
+// When started from a terminal, diagnostics go to stderr (timestamps via the standard log package).
 //
 // Build or run the whole package (not main.go alone):
 //
@@ -11,6 +12,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"io/fs"
@@ -24,6 +26,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -32,7 +35,7 @@ import (
 
 func main() {
 	a := app.NewWithID("io.github.zyzto.nsz.gui")
-	a.Settings().SetTheme(theme.DarkTheme())
+	a.Settings().SetTheme(newNSZTheme())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -40,14 +43,18 @@ func main() {
 	g := newGalaxy(ctx)
 
 	w := a.NewWindow("NSZ GUI")
-	w.Resize(fyne.NewSize(820, 560))
+	w.Resize(fyne.NewSize(940, 640))
+	w.SetFixedSize(false)
 	w.SetMaster()
 	pref := a.Preferences()
 	if pref.BoolWithFallback("window_fullscreen", false) {
 		w.SetFullScreen(true)
 	}
 
+	guiLogStartup()
+
 	queueData := binding.NewStringList()
+	var opRunning bool
 
 	queueCount := widget.NewLabel("Queue: 0 items")
 	updateQueueCount := func() {
@@ -71,23 +78,32 @@ func main() {
 
 	queueList := widget.NewListWithData(queueData,
 		func() fyne.CanvasObject {
+			// Border: remove button on the left; label fills remaining width. HBox used to
+			// give the label ~0 width, so TextWrapWord stacked one character per line.
 			lbl := widget.NewLabel("")
-			lbl.Wrapping = fyne.TextWrapWord
+			lbl.Wrapping = fyne.TextWrapOff
+			lbl.Truncation = fyne.TextTruncateEllipsis
+			lbl.Alignment = fyne.TextAlignLeading
 			rm := widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), nil)
 			rm.Importance = widget.LowImportance
-			return container.NewHBox(rm, lbl)
+			return container.NewBorder(nil, nil, rm, nil, lbl)
 		},
 		func(item binding.DataItem, o fyne.CanvasObject) {
 			box, boxOK := o.(*fyne.Container)
-			if !boxOK || len(box.Objects) < 2 {
+			if !boxOK {
 				return
 			}
-			rm, rmOK := box.Objects[0].(*widget.Button)
-			if !rmOK {
-				return
+			var lbl *widget.Label
+			var rm *widget.Button
+			for _, obj := range box.Objects {
+				switch w := obj.(type) {
+				case *widget.Label:
+					lbl = w
+				case *widget.Button:
+					rm = w
+				}
 			}
-			lbl, lblOK := box.Objects[1].(*widget.Label)
-			if !lblOK {
+			if lbl == nil || rm == nil {
 				return
 			}
 			str, strOK := item.(binding.String)
@@ -96,11 +112,15 @@ func main() {
 			}
 			lbl.Bind(str)
 			rm.OnTapped = func() {
+				if opRunning {
+					return
+				}
 				s, err := str.Get()
 				if err != nil {
 					return
 				}
 				logBindError("queueData.Remove", queueData.Remove(s))
+				guiLogQueuef("removed %q", s)
 			}
 		},
 	)
@@ -117,6 +137,7 @@ func main() {
 			selectedQueueIdx = -1
 			return
 		}
+		guiLogQueuef("remove selected %q", items[selectedQueueIdx])
 		removeQueueIndex(queueData, selectedQueueIdx)
 		queueList.UnselectAll()
 		removeSelectedBtn.Disable()
@@ -137,6 +158,7 @@ func main() {
 			if !ok {
 				return
 			}
+			guiLogQueuef("cleared all (%d path(s))", len(items))
 			logBindError("queueData.Set clear", queueData.Set([]string{}))
 			queueList.UnselectAll()
 			removeSelectedBtn.Disable()
@@ -154,7 +176,7 @@ func main() {
 	}
 
 	queueToolbar := container.NewHBox(
-		widget.NewLabel("Select a row to remove ·"),
+		widget.NewLabel("Selection:"),
 		removeSelectedBtn,
 		clearQueueBtn,
 	)
@@ -172,61 +194,25 @@ func main() {
 
 	progBind := binding.NewFloat()
 	prog := widget.NewProgressBarWithData(progBind)
-	prog.Hide()
+	// Keep the bar in the layout at all times (0% when idle). Hiding it made quick
+	// failures (e.g. unsupported Extract) collapse the footer and shift the whole UI up.
 
 	repCh := make(chan string, 64)
 	progCh := make(chan float64, 8)
 	var cancelRun context.CancelFunc
+	var runWithRep func(core.Options, func())
+	var finishUIAfterRun func()
 
 	flushStatus := func() {
 		for {
 			select {
 			case m := <-repCh:
+				guiLogStatus(m)
 				logBindError("statusStr flush", statusStr.Set(m))
 			default:
 				return
 			}
 		}
-	}
-
-	runWithRep := func(opt core.Options, done func()) {
-		logBindError("progBind reset", progBind.Set(0))
-		prog.Show()
-		ctxRun, cancel := context.WithCancel(context.Background())
-		cancelRun = cancel
-		go func() {
-			defer done()
-			rep := &chanReporter{
-				info:  func(msg string) { repCh <- msg },
-				warn:  func(msg string) { repCh <- msg },
-				errFn: func(msg string) { repCh <- msg },
-				prog: func(r, _, t int64, step string) {
-					if t > 0 {
-						repCh <- fmt.Sprintf("%s %d%%", step, r*100/t)
-						p := float64(r) / float64(t)
-						if p > 1 {
-							p = 1
-						}
-						select {
-						case progCh <- p:
-						default:
-						}
-					} else {
-						repCh <- step
-					}
-				},
-			}
-			err := core.Run(ctxRun, opt, rep)
-			if err != nil {
-				repCh <- "Error: " + err.Error()
-			} else {
-				repCh <- "Done."
-			}
-			select {
-			case progCh <- 1:
-			default:
-			}
-		}()
 	}
 
 	addFiles := widget.NewButton("Add files…", func() {
@@ -240,6 +226,7 @@ func main() {
 				}
 			}()
 			p := filepath.Clean(uc.URI().Path())
+			guiLogQueuef("add file %q", p)
 			queueMergeUnique(queueData, []string{p})
 		}, w)
 		d.Show()
@@ -256,6 +243,7 @@ func main() {
 				dialog.ShowInformation("NSZ GUI", "No matching archives found in that folder.", w)
 				return
 			}
+			guiLogQueuef("scan folder %q: found %d archive path(s)", uri.Path(), len(added))
 			queueMergeUnique(queueData, added)
 		}, w).Show()
 	})
@@ -268,11 +256,12 @@ func main() {
 			}
 			outEntry.SetText(uri.Path())
 			pref.SetString("output_dir", uri.Path())
+			guiLogOutputDir(uri.Path())
 		}, w).Show()
 	})
 	outBtn.Importance = widget.HighImportance
 
-	compressBtn := widget.NewButton("Compress .nsp/.xci", func() {
+	compressBtn := widget.NewButton("Compress (NCA)", func() {
 		paths := queueSnapshot(queueData)
 		if len(paths) == 0 {
 			dialog.ShowInformation("NSZ GUI", "Add at least one file to the queue.", w)
@@ -282,15 +271,11 @@ func main() {
 		opt.Compress = true
 		opt.Files = paths
 		opt.Output = strings.TrimSpace(outEntry.Text)
-		runWithRep(opt, func() {
-			prog.Hide()
-			cancelRun = nil
-			logBindError("progBind done", progBind.Set(0))
-		})
+		runWithRep(opt, finishUIAfterRun)
 	})
 	compressBtn.Importance = widget.SuccessImportance
 
-	decompressBtn := widget.NewButton("Decompress .nsz/.xcz/.ncz", func() {
+	decompressBtn := widget.NewButton("Decompress", func() {
 		paths := queueSnapshot(queueData)
 		if len(paths) == 0 {
 			dialog.ShowInformation("NSZ GUI", "Add at least one file to the queue.", w)
@@ -300,11 +285,7 @@ func main() {
 		opt.Decompress = true
 		opt.Files = paths
 		opt.Output = strings.TrimSpace(outEntry.Text)
-		runWithRep(opt, func() {
-			prog.Hide()
-			cancelRun = nil
-			logBindError("progBind done", progBind.Set(0))
-		})
+		runWithRep(opt, finishUIAfterRun)
 	})
 	decompressBtn.Importance = widget.WarningImportance
 
@@ -330,11 +311,7 @@ func main() {
 		default:
 			opt.QuickVerify = true
 		}
-		runWithRep(opt, func() {
-			prog.Hide()
-			cancelRun = nil
-			logBindError("progBind done", progBind.Set(0))
-		})
+		runWithRep(opt, finishUIAfterRun)
 	})
 
 	infoBtn := widget.NewButton("Info", func() {
@@ -347,11 +324,7 @@ func main() {
 		opt.Info = true
 		opt.Files = paths
 		opt.Depth = pref.IntWithFallback("info_depth", 1)
-		runWithRep(opt, func() {
-			prog.Hide()
-			cancelRun = nil
-			logBindError("progBind done", progBind.Set(0))
-		})
+		runWithRep(opt, finishUIAfterRun)
 	})
 
 	extractBtn := widget.NewButton("Extract", func() {
@@ -366,11 +339,7 @@ func main() {
 		opt.Output = strings.TrimSpace(outEntry.Text)
 		opt.Depth = pref.IntWithFallback("info_depth", 1)
 		opt.ExtractRegex = pref.StringWithFallback("extract_regex", "")
-		runWithRep(opt, func() {
-			prog.Hide()
-			cancelRun = nil
-			logBindError("progBind done", progBind.Set(0))
-		})
+		runWithRep(opt, finishUIAfterRun)
 	})
 	extractBtn.Importance = widget.DangerImportance
 
@@ -383,49 +352,190 @@ func main() {
 		opt := optionsFromPrefs(pref)
 		opt.Titlekeys = true
 		opt.Files = paths
-		runWithRep(opt, func() {
-			prog.Hide()
-			cancelRun = nil
-			logBindError("progBind done", progBind.Set(0))
-		})
+		runWithRep(opt, finishUIAfterRun)
 	})
 
 	cancelBtn := widget.NewButton("Cancel", func() {
 		if cancelRun != nil {
+			guiLogCancel()
 			cancelRun()
 			logBindError("statusStr cancel", statusStr.Set("Cancelled."))
 		}
 	})
+	cancelBtn.Importance = widget.MediumImportance
 
-	row1 := container.NewHBox(compressBtn, decompressBtn, addFiles, scanFolder, outBtn)
-	row2 := container.NewHBox(settingsBtn, aboutBtn, verifyBtn, infoBtn, extractBtn, titlekeyBtn, cancelBtn)
+	finishUIAfterRun = func() {
+		cancelRun = nil
+		logBindError("progBind done", progBind.Set(0))
+	}
 
-	panel := canvas.NewRectangle(color.NRGBA{R: 12, G: 10, B: 22, A: 210})
-	panel.CornerRadius = 12
+	syncQueueChrome := func() {
+		if opRunning {
+			return
+		}
+		items, err := queueData.Get()
+		if err != nil || selectedQueueIdx < 0 || selectedQueueIdx >= len(items) {
+			removeSelectedBtn.Disable()
+		} else {
+			removeSelectedBtn.Enable()
+		}
+	}
+
+	setBusy := func(busy bool) {
+		opRunning = busy
+		if busy {
+			compressBtn.Disable()
+			decompressBtn.Disable()
+			addFiles.Disable()
+			scanFolder.Disable()
+			outBtn.Disable()
+			outEntry.Disable()
+			settingsBtn.Disable()
+			aboutBtn.Disable()
+			verifyBtn.Disable()
+			infoBtn.Disable()
+			extractBtn.Disable()
+			titlekeyBtn.Disable()
+			removeSelectedBtn.Disable()
+			clearQueueBtn.Disable()
+			cancelBtn.Enable()
+			queueList.Refresh()
+			return
+		}
+		cancelBtn.Disable()
+		compressBtn.Enable()
+		decompressBtn.Enable()
+		addFiles.Enable()
+		scanFolder.Enable()
+		outBtn.Enable()
+		outEntry.Enable()
+		settingsBtn.Enable()
+		aboutBtn.Enable()
+		verifyBtn.Enable()
+		infoBtn.Enable()
+		extractBtn.Enable()
+		titlekeyBtn.Enable()
+		clearQueueBtn.Enable()
+		syncQueueChrome()
+		queueList.Refresh()
+	}
+
+	runWithRep = func(opt core.Options, done func()) {
+		setBusy(true)
+		title := w.Title()
+		w.SetTitle("NSZ GUI — working…")
+		logCoreJobStart(opt)
+		logBindError("progBind reset", progBind.Set(0))
+		ctxRun, cancel := context.WithCancel(context.Background())
+		cancelRun = cancel
+		go func() {
+			defer func() {
+				w.SetTitle(title)
+				setBusy(false)
+				done()
+			}()
+			rep := &chanReporter{
+				info:  func(msg string) { repCh <- msg },
+				warn:  func(msg string) { repCh <- msg },
+				errFn: func(msg string) { repCh <- msg },
+				prog: func(r, _, t int64, step string) {
+					if t > 0 {
+						repCh <- fmt.Sprintf("%s %d%%", step, r*100/t)
+						p := float64(r) / float64(t)
+						if p > 1 {
+							p = 1
+						}
+						select {
+						case progCh <- p:
+						default:
+						}
+					} else {
+						repCh <- step
+					}
+				},
+			}
+			err := core.Run(ctxRun, opt, rep)
+			guiLogCoreRunDone(err)
+			if err != nil {
+				repCh <- "Error: " + err.Error()
+			} else {
+				repCh <- "Done."
+			}
+			select {
+			case progCh <- 1:
+			default:
+			}
+		}()
+	}
+
+	cancelBtn.Disable()
+
+	primaryRow := container.NewGridWithColumns(2, compressBtn, decompressBtn)
+	addScanRow := container.NewGridWithColumns(3, addFiles, scanFolder, outBtn)
+	toolbarTop := container.NewVBox(
+		primaryRow,
+		widget.NewSeparator(),
+		addScanRow,
+	)
+	toolbarTop = container.NewPadded(toolbarTop)
+
+	secondaryGrid := container.NewGridWithColumns(5, settingsBtn, aboutBtn, verifyBtn, infoBtn, titlekeyBtn)
+	actionTail := container.NewHBox(layout.NewSpacer(), extractBtn, cancelBtn)
+	toolbarMid := container.NewVBox(secondaryGrid, actionTail)
+	toolbarMid = container.NewPadded(toolbarMid)
+
+	panel := canvas.NewRectangle(color.NRGBA{R: 22, G: 18, B: 38, A: 236})
+	panel.CornerRadius = 16
+
+	queueScroll := container.NewScroll(queueList)
+	queueScroll.SetMinSize(fyne.NewSize(200, 240))
 
 	queueBody := container.NewVBox(
 		queueCount,
-		queueList,
+		queueScroll,
 		widget.NewSeparator(),
 		queueToolbar,
 	)
-	fileCard := widget.NewCard("Queue", "Add files, scan folder, or drop onto the window. Each row has Remove; use the toolbar for selected row or clear all.", queueBody)
+	fileCard := widget.NewCard(
+		"Queue",
+		"Drop files here, use Add files or Scan folder. Compress uses solid .nca→.ncz. .xci→.xcz is optional in Settings (off by default).",
+		queueBody,
+	)
 
-	center := container.NewVBox(
-		widget.NewLabel("Output directory"),
-		outEntry,
-		fileCard,
+	outLabel := widget.NewLabelWithStyle("Output directory", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	outBlock := container.NewVBox(outLabel, outEntry)
+
+	statusFoot := canvas.NewRectangle(color.NRGBA{R: 10, G: 8, B: 18, A: 220})
+	statusFoot.CornerRadius = 8
+	statusBlock := container.NewVBox(
+		widget.NewSeparator(),
 		prog,
 		status,
 	)
+	statusPadded := container.NewPadded(statusBlock)
+	statusStack := container.NewStack(statusFoot, statusPadded)
+
+	center := container.NewVBox(
+		outBlock,
+		fileCard,
+		statusStack,
+	)
+	center = container.NewPadded(center)
 	padded := container.NewPadded(center)
 	foreground := container.NewStack(panel, padded)
-	mainCol := container.NewVBox(row1, row2, foreground)
+	mainCol := container.NewVBox(toolbarTop, widget.NewSeparator(), toolbarMid, foreground)
+	mainCol = container.NewPadded(mainCol)
 
 	root := container.NewStack(g.object(), mainCol)
 	w.SetContent(root)
 
 	w.SetOnDropped(func(_ fyne.Position, uris []fyne.URI) {
+		if opRunning {
+			return
+		}
+		if len(uris) > 0 {
+			guiLogQueuef("drop: %d URI(s)", len(uris))
+		}
 		mergeDroppedPaths(queueData, uris)
 	})
 
@@ -433,7 +543,11 @@ func main() {
 		for {
 			select {
 			case m := <-repCh:
+				guiLogStatus(m)
 				logBindError("statusStr async", statusStr.Set(m))
+				if strings.HasPrefix(m, "Error: ") {
+					dialog.ShowError(errors.New(strings.TrimPrefix(m, "Error: ")), w)
+				}
 			case p := <-progCh:
 				logBindError("progBind", progBind.Set(p))
 			}
@@ -441,6 +555,7 @@ func main() {
 	}()
 
 	w.SetCloseIntercept(func() {
+		guiLogClose()
 		flushStatus()
 		if cancelRun != nil {
 			cancelRun()
@@ -481,6 +596,7 @@ func fillFromPrefs(pref fyne.Preferences, o *core.Options) {
 	o.RmSource = pref.BoolWithFallback("rm_source", false)
 	o.Depth = pref.IntWithFallback("info_depth", 1)
 	o.ExtractRegex = pref.StringWithFallback("extract_regex", "")
+	o.CompressXCI = pref.BoolWithFallback("compress_xci", false)
 	applyVerifyMode(pref, o)
 }
 
@@ -535,7 +651,9 @@ func queueMergeUnique(q binding.StringList, add []string) {
 	if len(next) == len(cur) {
 		return
 	}
+	added := len(next) - len(cur)
 	logBindError("queueMergeUnique Set", q.Set(next))
+	guiLogQueuef("merged +%d new path(s), queue size %d", added, len(next))
 }
 
 func removeQueueIndex(q binding.StringList, i int) {

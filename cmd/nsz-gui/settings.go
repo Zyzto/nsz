@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -80,16 +81,22 @@ func showSettings(parent fyne.Window, pref fyne.Preferences) {
 	})
 	longChk.SetChecked(pref.BoolWithFallback("use_long", false))
 
-	tabSettings := container.NewScroll(container.NewVBox(
-		settingBlock("Compression level", "Trade-off between speed and ratio. Default 18, max 22.", levelSel),
+	compressXCI := widget.NewCheck("Enable .xci → .xcz compression (experimental; known broken in some cases)", func(v bool) {
+		pref.SetBool("compress_xci", v)
+	})
+	compressXCI.SetChecked(pref.BoolWithFallback("compress_xci", false))
+
+	tabSettings := container.NewScroll(settingsStack(
+		settingBlock("Compression level", "Trade-off between speed and ratio. Default 18, max 22. Go: .nca→.ncz always; .xci→.xcz only if enabled below. .nsp not implemented yet.", levelSel),
 		settingBlock("Block size", "Exponent for random-access blocks (2^n bytes).", bsSel),
 		settingBlock("[.nsz] Block compression", "Highly parallel; better random read; slightly lower ratio.", blockChk),
 		settingBlock("[.xcz] Solid compression", "Higher ratio; not suitable for mounting without decompress.", solidChk),
+		settingBlock("XCI / XCZ", "Off by default. Only affects .xci inputs when using Compress.", compressXCI),
 		settingBlock("Long distance mode", "", longChk),
 		settingBlock("Verify", "Quick skips expensive PFS0 hash and checks .nca hashes. Full needs --keep when compressing.", verifySel),
 		settingBlock("Keep everything", "", keepChk),
 	))
-	tabSettings.SetMinSize(fyne.NewSize(480, 360))
+	tabSettings.SetMinSize(fyne.NewSize(560, 420))
 
 	threadsEnt := intEntry(pref, "threads", pref.IntWithFallback("threads", -1))
 	multiEnt := intEntry(pref, "multi", pref.IntWithFallback("multi", 4))
@@ -112,7 +119,7 @@ func showSettings(parent fyne.Window, pref fyne.Preferences) {
 	rmSrc := widget.NewCheck("Delete sources after success (use with verify)", func(v bool) { pref.SetBool("rm_source", v) })
 	rmSrc.SetChecked(pref.BoolWithFallback("rm_source", false))
 
-	tabAdvanced := container.NewScroll(container.NewVBox(
+	tabAdvanced := container.NewScroll(settingsStack(
 		settingBlock("Threads", "Compression threads; values < 1 follow tool defaults.", threadsEnt),
 		settingBlock("Multitasking", "Parallel compression jobs — watch RAM at high levels.", multiEnt),
 		settingBlock("Fix padding", "", fixPad),
@@ -122,7 +129,7 @@ func showSettings(parent fyne.Window, pref fyne.Preferences) {
 		settingBlock("rm-old-version", "", rmOld),
 		settingBlock("rm-source", "", rmSrc),
 	))
-	tabAdvanced.SetMinSize(fyne.NewSize(480, 360))
+	tabAdvanced.SetMinSize(fyne.NewSize(560, 420))
 
 	depthEnt := intEntry(pref, "info_depth", pref.IntWithFallback("info_depth", 1))
 	regexEnt := widget.NewEntry()
@@ -137,13 +144,13 @@ func showSettings(parent fyne.Window, pref fyne.Preferences) {
 	topNote := widget.NewLabel("Fyne does not expose always-on-top on all platforms; the choice is stored for future use.")
 	topNote.Wrapping = fyne.TextWrapWord
 
-	tabTools := container.NewScroll(container.NewVBox(
+	tabTools := container.NewScroll(settingsStack(
 		settingBlock("Info depth", "Max depth for info and extraction.", depthEnt),
 		settingBlock("Extract filter", "Regex for members inside a container.", regexEnt),
 		settingBlock("Always on top", "", alwaysTop),
-		topNote,
+		container.NewPadded(topNote),
 	))
-	tabTools.SetMinSize(fyne.NewSize(480, 360))
+	tabTools.SetMinSize(fyne.NewSize(560, 420))
 
 	fullChk := widget.NewCheck("Fullscreen window", func(v bool) {
 		pref.SetBool("window_fullscreen", v)
@@ -156,12 +163,12 @@ func showSettings(parent fyne.Window, pref fyne.Preferences) {
 	})
 	logLevel.SetSelected(pref.StringWithFallback("log_level", "info"))
 
-	tabWindow := container.NewScroll(container.NewVBox(
+	tabWindow := container.NewScroll(settingsStack(
 		settingBlock("Fullscreen", "Toggle fullscreen for this window.", fullChk),
 		settingBlock("Log level", "Reserved for future file logging.", logLevel),
-		widget.NewLabel("Graphics, virtual keyboard, and FPS settings from the old UI are not applicable to Fyne."),
+		container.NewPadded(widget.NewLabel("Graphics, virtual keyboard, and FPS settings from the old UI are not applicable to Fyne.")),
 	))
-	tabWindow.SetMinSize(fyne.NewSize(480, 360))
+	tabWindow.SetMinSize(fyne.NewSize(560, 420))
 
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Settings", tabSettings),
@@ -171,18 +178,40 @@ func showSettings(parent fyne.Window, pref fyne.Preferences) {
 	)
 
 	closeBtn := widget.NewButton("Close", nil)
+
+	footer := container.NewPadded(container.NewVBox(
+		widget.NewSeparator(),
+		container.NewHBox(layout.NewSpacer(), closeBtn, layout.NewSpacer()),
+	))
+
+	tabsPad := container.NewPadded(tabs)
 	d := widget.NewModalPopUp(
-		container.NewBorder(nil, closeBtn, nil, nil, tabs),
+		container.NewBorder(nil, footer, nil, nil, tabsPad),
 		parent.Canvas(),
 	)
 	closeBtn.OnTapped = func() { d.Hide() }
-	d.Resize(fyne.NewSize(560, 440))
+	// Generous size so tab scroll areas and footer do not overlap.
+	d.Resize(fyne.NewSize(720, 620))
 	d.Show()
 }
 
+func settingsStack(parts ...fyne.CanvasObject) fyne.CanvasObject {
+	var objs []fyne.CanvasObject
+	for i, p := range parts {
+		if i > 0 {
+			objs = append(objs, widget.NewSeparator())
+		}
+		objs = append(objs, p)
+	}
+	return container.NewVBox(objs...)
+}
+
+// settingBlock stacks title, optional description, then control full-width below.
+// The old Border(right=control) layout squeezed labels and pushed controls into a narrow strip.
 func settingBlock(title, desc string, ctrl fyne.CanvasObject) fyne.CanvasObject {
 	t := widget.NewLabel(title)
 	t.TextStyle = fyne.TextStyle{Bold: true}
+	t.Wrapping = fyne.TextWrapWord
 	var body []fyne.CanvasObject
 	body = append(body, t)
 	if strings.TrimSpace(desc) != "" {
@@ -190,8 +219,8 @@ func settingBlock(title, desc string, ctrl fyne.CanvasObject) fyne.CanvasObject 
 		d.Wrapping = fyne.TextWrapWord
 		body = append(body, d)
 	}
-	left := container.NewVBox(body...)
-	return container.NewBorder(nil, nil, nil, ctrl, left)
+	body = append(body, ctrl)
+	return container.NewPadded(container.NewVBox(body...))
 }
 
 func intEntry(pref fyne.Preferences, key string, initial int) *widget.Entry {

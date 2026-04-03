@@ -4,13 +4,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 
-	"github.com/zyzto/nsz/internal/core"
 	"github.com/schollz/progressbar/v3"
+	"github.com/zyzto/nsz/internal/core"
 )
 
 func main() {
@@ -19,7 +20,8 @@ func main() {
 
 func run() int {
 	opt := core.DefaultOptions()
-	flag.BoolVar(&opt.Compress, "C", false, "Compress .nsp/.xci")
+	flag.BoolVar(&opt.Compress, "C", false, "Compress .nsp/.xci/.nca (.xci requires -compress-xci)")
+	flag.BoolVar(&opt.CompressXCI, "compress-xci", false, "Allow .xci → .xcz (experimental; off by default)")
 	flag.BoolVar(&opt.Decompress, "D", false, "Decompress .nsz/.xcz/.ncz")
 	flag.IntVar(&opt.Level, "l", 18, "Compression level (default 18)")
 	flag.IntVar(&opt.Level, "level", 18, "Compression level")
@@ -94,7 +96,7 @@ func run() int {
 
 	rep := newTermReporter(opt)
 	if err := core.Run(ctx, opt, rep); err != nil {
-		if err == core.ErrCompressNotImplemented {
+		if errors.Is(err, core.ErrCompressContainerNotImplemented) {
 			fmt.Fprintln(os.Stderr, err)
 			return 3
 		}
@@ -132,12 +134,12 @@ func (t *termReporter) Error(msg string) {
 func (t *termReporter) Progress(readB, writtenB, total int64, step string) {
 	if t.opt.MachineReadable {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
-			"type":     "progress",
-			"read":     readB,
-			"written":  writtenB,
-			"total":    total,
-			"step":     step,
-			"percent":  percent(readB, total),
+			"type":    "progress",
+			"read":    readB,
+			"written": writtenB,
+			"total":   total,
+			"step":    step,
+			"percent": percent(readB, total),
 		})
 		return
 	}

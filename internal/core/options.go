@@ -5,6 +5,7 @@ type Options struct {
 	Files []string
 
 	Compress    bool
+	CompressXCI bool // .xci → .xcz; off by default (experimental)
 	Decompress  bool
 	Info        bool
 	Extract     bool
@@ -49,10 +50,11 @@ type Options struct {
 // DefaultOptions returns CLI defaults aligned with Python argparse.
 func DefaultOptions() Options {
 	return Options{
-		Level:     18,
-		BlockSize: 20,
-		Threads:   -1,
-		Multi:     4,
-		Depth:     1,
+		Level:       18,
+		BlockSize:   20,
+		Threads:     -1,
+		Multi:       4,
+		Depth:       1,
+		CompressXCI: false,
 	}
 }

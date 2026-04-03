@@ -6,6 +6,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -29,28 +30,36 @@ func showAbout(parent fyne.Window) {
 		widget.NewHyperlink("Contributors", uMust("https://github.com/zyzto/nsz/graphs/contributors")),
 		widget.NewHyperlink("License", uMust("https://github.com/zyzto/nsz/blob/master/LICENSE")),
 	)
+	linksPad := container.NewPadded(links)
 
-	license := widget.NewMultiLineEntry()
-	license.SetText(embeddedLicense)
-	license.Disable()
-	license.Wrapping = fyne.TextWrapWord
+	// Label uses normal foreground; disabled MultiLineEntry was low-contrast.
+	lic := widget.NewLabel(embeddedLicense)
+	lic.Wrapping = fyne.TextWrapWord
 
-	scroll := container.NewScroll(license)
-	scroll.SetMinSize(fyne.NewSize(520, 280))
+	scroll := container.NewScroll(lic)
+	scroll.SetMinSize(fyne.NewSize(560, 320))
+
+	header := widget.NewLabelWithStyle("About NSZ GUI", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
 	body := container.NewVBox(
-		widget.NewLabelWithStyle("About NSZ GUI", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		links,
+		container.NewPadded(header),
+		linksPad,
 		widget.NewSeparator(),
-		scroll,
+		container.NewPadded(scroll),
 	)
 
 	closeBtn := widget.NewButton("Close", nil)
+	footer := container.NewPadded(container.NewVBox(
+		widget.NewSeparator(),
+		container.NewHBox(layout.NewSpacer(), closeBtn, layout.NewSpacer()),
+	))
+
+	center := container.NewPadded(body)
 	d := widget.NewModalPopUp(
-		container.NewBorder(nil, closeBtn, nil, nil, body),
+		container.NewBorder(nil, footer, nil, nil, center),
 		parent.Canvas(),
 	)
 	closeBtn.OnTapped = func() { d.Hide() }
-	d.Resize(fyne.NewSize(560, 420))
+	d.Resize(fyne.NewSize(640, 520))
 	d.Show()
 }

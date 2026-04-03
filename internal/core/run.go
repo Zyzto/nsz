@@ -16,9 +16,9 @@ func Run(ctx context.Context, opt Options, rep Reporter) error {
 		rep = NopReporter{}
 	}
 	if opt.Compress {
-		return ErrCompressNotImplemented
+		return runCompress(ctx, opt, rep)
 	}
-	if opt.Output != "" {
+	if opt.Decompress && opt.Output != "" {
 		st, err := os.Stat(opt.Output)
 		if err != nil || !st.IsDir() {
 			rep.Error(fmt.Sprintf("output directory does not exist: %s", opt.Output))
@@ -26,6 +26,7 @@ func Run(ctx context.Context, opt Options, rep Reporter) error {
 		}
 	}
 	if opt.Decompress {
+		var sawXcz, decompressedOK bool
 		for _, f := range opt.Files {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -38,6 +39,9 @@ func Run(ctx context.Context, opt Options, rep Reporter) error {
 				matches = []string{f}
 			}
 			for _, p := range matches {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				ext := strings.ToLower(filepath.Ext(p))
 				if ext != ".nsz" && ext != ".xcz" && ext != ".ncz" {
 					rep.Info(fmt.Sprintf("skip (not compressed container): %s", p))
@@ -52,6 +56,7 @@ func Run(ctx context.Context, opt Options, rep Reporter) error {
 				case ".nsz":
 					outPath = filepath.Join(outDir, strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))+".nsp")
 				case ".xcz":
+					sawXcz = true
 					rep.Warn("xcz: not implemented in Go port yet")
 					continue
 				case ".ncz":
@@ -59,17 +64,31 @@ func Run(ctx context.Context, opt Options, rep Reporter) error {
 					if err := decompressNCZFile(ctx, p, outPath, rep); err != nil {
 						return err
 					}
+					decompressedOK = true
 					continue
 				}
 				if err := DecompressNSZ(ctx, p, outPath, opt.FixPadding, rep); err != nil {
 					return fmt.Errorf("%s: %w", p, err)
 				}
+				decompressedOK = true
 			}
+		}
+		if sawXcz && !decompressedOK {
+			return fmt.Errorf("decompress: .xcz is not implemented in the Go port yet")
 		}
 		return nil
 	}
-	if opt.Info || opt.Extract || opt.Titlekeys || opt.Verify {
-		return fmt.Errorf("nsz: this operation is not implemented in the Go port yet")
+	if opt.Info {
+		return runInfo(ctx, opt, rep)
+	}
+	if opt.Verify {
+		return runVerify(ctx, opt, rep)
+	}
+	if opt.Titlekeys {
+		return runTitlekeys(ctx, opt, rep)
+	}
+	if opt.Extract {
+		return fmt.Errorf("nsz: extract (-x) is not implemented in the Go port yet")
 	}
 	if len(opt.Files) > 0 {
 		rep.Info("no operation flag (-C/-D/-i/...) given; try nsz --help")

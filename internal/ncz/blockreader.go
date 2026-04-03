@@ -1,6 +1,7 @@
 package ncz
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/klauspost/compress/zstd"
@@ -63,7 +64,13 @@ func (b *BlockReader) decompressBlock(blockID int) ([]byte, error) {
 		return nil, err
 	}
 	compSz := int64(b.hdr.CompressedBlockSizes[blockID])
-	buf := make([]byte, compSz)
+	// Upstream BlockDecompressorReader: zstd path reads compSz bytes; uncompressed path reads
+	// only decompressedBlockSize bytes (on-disk slot may be larger — padding after logical block).
+	readN := compSz
+	if compSz >= decompressedBlockSize {
+		readN = decompressedBlockSize
+	}
+	buf := make([]byte, readN)
 	if _, err := io.ReadFull(b.r, buf); err != nil {
 		return nil, err
 	}
@@ -125,7 +132,7 @@ func (b *BlockReader) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		b.position = b.hdr.DecompressedSize + offset
 	default:
-		return 0, io.EOF
+		return 0, fmt.Errorf("ncz: invalid whence %d", whence)
 	}
 	return b.position, nil
 }

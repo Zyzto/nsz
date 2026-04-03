@@ -3,6 +3,6 @@ package core
 import "errors"
 
 var (
-	// ErrCompressNotImplemented is returned until the Go solid/block compressor reaches parity.
-	ErrCompressNotImplemented = errors.New("nsz: compress (-C) is not implemented yet")
+	// ErrCompressContainerNotImplemented is returned for .nsp/.xci until the NCA section pipeline is ported.
+	ErrCompressContainerNotImplemented = errors.New("nsz: compress for this container type is not implemented in Go yet")
 )
