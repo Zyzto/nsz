@@ -125,7 +125,6 @@ class RootWidget(FloatLayout):
         import sys
         import os
         import re
-        import time
 
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         nsz_path = os.path.join(base_dir, "nsz.py")
@@ -134,6 +133,86 @@ class RootWidget(FloatLayout):
         process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
         )
+
+        modal = self._create_progress_modal()
+
+        current_file = ""
+        total_files = 1
+        current_file_index = 0
+
+        def update_modal(
+            status=None, progress=None, filename=None, file_idx=None, total=None
+        ):
+            def do_update(dt):
+                if filename is not None:
+                    modal.current_file = filename
+                if file_idx is not None and total is not None:
+                    modal.current_file_index = file_idx
+                    modal.total_files = total
+                if progress is not None:
+                    modal.progress_percent = progress
+                if status is not None:
+                    modal.status_text = status
+
+            Clock.schedule_once(do_update)
+
+        update_modal(status="Starting...", progress=0)
+
+        for line in process.stdout:
+            print(line.rstrip())
+
+            line_lower = line.lower()
+
+            percent_matches = re.findall(r"(\d+)%", line)
+            if percent_matches:
+                percent = int(percent_matches[-1])
+                update_modal(progress=percent, status=f"Progress: {percent}%")
+
+            if "solid compressing" in line_lower or "block compressing" in line_lower:
+                match = re.search(
+                    r"(?:solid|block)\s+compressing\s+(.+?)(?:\s+->|$)",
+                    line,
+                    re.IGNORECASE,
+                )
+                if match:
+                    current_file = match.group(1).strip()[:50]
+                    current_file_index += 1
+                    update_modal(
+                        filename=current_file,
+                        file_idx=current_file_index,
+                        total=total_files,
+                    )
+
+            if "compressing" in line_lower and "->" in line:
+                match = re.search(r"->\s+([^\s]+\.(?:nsz|xcz|ncz))", line)
+                if match:
+                    current_file = f"Output: {match.group(1)}"
+                    update_modal(filename=current_file)
+
+            if "compressed" in line_lower and "%" in line:
+                match = re.search(r"compressed\s+(\d+)%", line)
+                if match:
+                    percent = int(match.group(1))
+                    update_modal(progress=percent, status=f"Compressed: {percent}%")
+
+            if self._cancel_requested:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                self._operation_result = ("cancelled", "Operation cancelled by user")
+                return
+
+        return_code = process.wait()
+
+        if return_code == 0:
+            self._operation_result = ("success", "Operation completed successfully!")
+        else:
+            self._operation_result = (
+                "error",
+                f"Process exited with code {return_code}",
+            )
 
         modal = self._create_progress_modal()
 

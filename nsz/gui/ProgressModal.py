@@ -14,31 +14,18 @@ class ProgressModal(ModalView):
     progress_percent = NumericProperty(0)
     progress_color = [0.2, 0.5, 0.9, 1.0]
     current_file = StringProperty("")
-
     current_file_index = NumericProperty(0)
     total_files = NumericProperty(0)
-    file_size_mb = NumericProperty(0)
-    processed_mb = NumericProperty(0)
-    speed_mb_s = NumericProperty(0)
-    eta_seconds = NumericProperty(0)
 
     __events__ = ("on_cancel",)
 
     def __init__(self, **kwargs):
         super(ProgressModal, self).__init__(**kwargs)
         self.auto_dismiss = False
-        self.size_hint = (0.7, 0.6)
+        self.size_hint = (0.7, 0.5)
 
     def on_cancel(self, *args):
         pass
-
-    def update_status(self, status, progress=None):
-        self.status_text = status
-        if progress is not None:
-            self.progress_percent = progress
-
-    def update_file(self, filename):
-        self.current_file = filename
 
     def set_operation(self, name):
         self.operation_name = name
@@ -47,10 +34,6 @@ class ProgressModal(ModalView):
         self.current_file = ""
         self.current_file_index = 0
         self.total_files = 0
-        self.file_size_mb = 0
-        self.processed_mb = 0
-        self.speed_mb_s = 0
-        self.eta_seconds = 0
 
     def set_progress_color(self, r, g, b, a=1.0):
         self.progress_color = [r, g, b, a]
